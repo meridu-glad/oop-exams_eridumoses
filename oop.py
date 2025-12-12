@@ -633,10 +633,12 @@ def merge_group_generic(
         if text_default == "longest":
             out[col] = _pick_longest_text(vals)
         elif text_default == "mode":
-            out[col] = _pick_mode(vals)
-        else:
-
-st.subheader("Build exact groups and merge")
+            out[col] = _pick_mode(vals)   
+else:
+    st.subheader("Build exact groups and merge")
+    # Add your logic here, for example:
+    df = st.session_state.df
+    st.write("Rows:", df.shape[0], "| Columns:", df.shape[1])
 
 df = st.session_state.get("df")
 if df is None:
@@ -1230,6 +1232,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
 
 
 
