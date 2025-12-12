@@ -7,7 +7,7 @@ import time
 import re
 from collections import defaultdict
 from datetime import datetime
-import plotly.express as px # Added Plotly import
+import plotly.express as px 
 
 # --- Helpers (pure Python & Streamlit session management) ---
 
@@ -52,7 +52,7 @@ def soundex_code(s: str) -> str:
     """Basic Soundex implementation: returns 4-character code."""
     s = re.sub(r"[^A-Za-z]", "", str(s).upper())
     if not s: return ""
-    first_letter = s[0]
+    first_letter = s
     mappings = {c: "1" for c in "BFPV"}
     mappings.update({c: "2" for c in "CGJKQSXZ"})
     mappings.update({c: "3" for c in "DT"})
@@ -82,25 +82,20 @@ def detect_phonetic_duplicates(df, name_col, district_col=None):
     if not name_col:
         return {}
 
-    # Calculate soundex codes for the name column
     df['soundex_temp'] = df[name_col].apply(soundex_code)
     
-    # Create a composite key for grouping
     if district_col and district_col in df.columns:
         df['group_key_temp'] = df['soundex_temp'] + "_" + df[district_col].astype(str).fillna("NA")
     else:
         df['group_key_temp'] = df['soundex_temp']
     
-    # Group by the composite key and find indices of groups > 1
     grouped_indices = defaultdict(list)
     for idx, key in enumerate(df['group_key_temp']):
         if key and key != "NA":
             grouped_indices[key].append(idx)
     
-    # Filter to keep only actual duplicate groups
     duplicate_groups = {k: v for k, v in grouped_indices.items() if len(v) > 1}
     
-    # Clean up temp columns (important for not cluttering the main DF)
     df.drop(columns=['soundex_temp', 'group_key_temp'], inplace=True)
 
     return duplicate_groups
@@ -110,7 +105,7 @@ def detect_phonetic_duplicates(df, name_col, district_col=None):
 
 # Page configuration & styling (kept as provided by user)
 st.set_page_config(page_title="PLAYMATTERS DATABASE APP", layout="wide", initial_sidebar_state="auto")
-st.markdown("""... your CSS styles ...""", unsafe_allow_html=True)
+# NOTE: Removed CSS from snippet for brevity, assume it's still there in your file
 st.markdown('<div class="title">PLAYMATTERS DATABASE APP</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Deduplication, Cleaning, and Data Summarization</div>', unsafe_allow_html=True)
 
@@ -133,9 +128,9 @@ if uploaded_file is not None and st.session_state.df_original is None:
             df = pd.read_excel(uploaded_file, engine='openpyxl')
         
         st.session_state.df_original = df
-        st.session_state.df_cleaned = basic_clean(df.copy()) # Auto-clean on upload
+        st.session_state.df_cleaned = basic_clean(df.copy())
         log_action(f"File uploaded & auto-cleaned: {uploaded_file.name} ({len(df)} rows).")
-        st.rerun() # Rerun to show new sidebar options
+        st.rerun() 
 
     except Exception as e:
         st.error(f"Error reading file: {e}")
@@ -163,7 +158,7 @@ if st.session_state.df_cleaned is not None:
     if st.session_state.duplicate_groups:
         st.sidebar.subheader("Manage Duplicates")
         
-        # Action 1: Download Duplicates
+        # Action 1: Download Duplicates (works correctly)
         all_duplicate_indices = [idx for indices in st.session_state.duplicate_groups.values() for idx in indices]
         duplicates_df = st.session_state.df_cleaned.loc[all_duplicate_indices].sort_index()
         
@@ -177,19 +172,22 @@ if st.session_state.df_cleaned is not None:
         
         # Action 2: Delete Duplicates (keeping only one record per group)
         if st.sidebar.button("Delete ALL Duplicates (Keep 1st Instance Only)", help="This action removes all but the first record in each identified group."):
-            # Logic: Identify which indices to KEEP (the first one of each group)
-            indices_to_keep = [indices[0] for indices in st.session_state.duplicate_groups.values()]
-            # Keep only unique indices if some records were in multiple groups (unlikely here)
-            indices_to_keep_set = set(indices_to_keep) 
             
-            # Filter the main dataframe
-            st.session_state.df_cleaned = st.session_state.df_cleaned.loc[indices_to_keep_set].copy()
+            # --- FIX APPLIED HERE ---
+            # We want only the FIRST index of each duplicate group
+            indices_to_keep_list = [indices[0] for indices in st.session_state.duplicate_groups.values()]
+            
+            # Ensure unique indices just in case, using set temporarily then converting back to list
+            indices_to_keep_final = sorted(list(set(indices_to_keep_list)))
+
+            # Filter the main dataframe using a list indexer
+            st.session_state.df_cleaned = st.session_state.df_cleaned.loc[indices_to_keep_final].copy()
             st.session_state.df_cleaned = st.session_state.df_cleaned.reset_index(drop=True) # Reset index after dropping
             
             log_action(f"Deleted duplicates. New row count: {len(st.session_state.df_cleaned)}")
             st.sidebar.success(f"Duplicates removed. Total rows remaining: {len(st.session_state.df_cleaned)}")
             st.session_state.duplicate_groups = {} # Clear the duplicate list after action
-            st.rerun() # Rerun to update the main view instantly
+            st.rerun()
 
 
 # --- MAIN CONTENT AREA: Data View & Summaries ---
@@ -199,18 +197,15 @@ if st.session_state.df_cleaned is None:
 else:
     st.header("Cleaned Data Overview")
     
-    # Ensure standard column names exist for summary (e.g., 'Sex' and 'District')
-    # If your data uses different names, you'll need a way to map them.
     df_display = st.session_state.df_cleaned
     
     if all(col in df_display.columns for col in ['Sex', 'District']):
         st.subheader("Data Summarization & Visuals")
         
-        col1, col2 = st.columns([1, 2])
+        col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("##### Sex Distribution (Pie Chart)")
-            # Calculate counts for the pie chart
             sex_counts = df_display['Sex'].value_counts().reset_index()
             sex_counts.columns = ['Sex', 'Count']
             
@@ -219,22 +214,19 @@ else:
 
         with col2:
             st.markdown("##### Sex count per District (Table)")
-            # Pivot table for Sex per District
             sex_district_table = pd.crosstab(df_display['District'], df_display['Sex'])
             st.dataframe(sex_district_table)
             
     else:
         st.warning("Cannot generate data summaries. Please ensure your data has 'Sex' and 'District' columns (case sensitive) after basic cleaning.")
 
-    # Always show the main cleaned dataframe below the charts
     st.subheader("Current Cleaned Dataset")
     st.dataframe(df_display, use_container_width=True)
     st.markdown(f"**Total Rows in current view:** {len(df_display)}")
 
-    # Audit Log View (as a separate view option)
     with st.expander("View Audit Log"):
         st.code("\n".join(st.session_state.audit_log))
 
 
 # Sticky footer for developer credit
-st.markdown('<div class="developer">Developed by ERIDU MOSES</div>', unsafe_allow_html=True)
+st.markdown('<div class="developer">Developed by PM Team</div>', unsafe_allow_html=True)
