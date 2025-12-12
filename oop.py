@@ -631,15 +631,26 @@ def merge_group_generic(
 
         # Text/object fallback
        
-   
+  
+
+# The code block you provided starts here (assuming it is inside a function or script flow)
+st.subheader("Build exact groups and merge")
+
+# Check if 'df' exists in session state before trying to access it anywhere
+if 'df' not in st.session_state or st.session_state.df is None:
+    st.info("Upload a file first.")
 else:
-    st.subheader("Build exact groups and merge")
-    # Add your logic here
-    if st.session_state.df is not None:
-        df = st.session_state.df
-        st.write(f"Rows: {df.shape[0]} | Columns: {df.shape[1]}")
-    else:
-        st.info("Upload a file first.")
+    # If the file IS uploaded, access the DataFrame safely
+    df = st.session_state.df
+    
+    # Add your main logic here to use the 'df' DataFrame
+    # For now, we keep the original display logic
+    st.write(f"Rows: {df.shape[0]} | Columns: {df.shape[1]}")
+    
+    # Example of where you might add more processing steps:
+    # st.write("Ready for further processing of the dataframe.")
+
+
      
 
 df = st.session_state.get("df")
@@ -1234,6 +1245,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
 
 
 
