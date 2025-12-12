@@ -692,8 +692,12 @@ else:
 
 # Session state init
 
+import streamlit as st
+import pandas as pd # You will likely use this later in your app
 
-Initialize session state for exact-only workflow
+# --- Initialize Session State for Exact-Only Workflow ---
+# This block ensures all required keys exist before the rest of the script runs.
+
 for key in [
     "step",                # current step in the app
     "df_raw",              # original uploaded DataFrame
@@ -706,8 +710,23 @@ for key in [
     "audit_log",           # log of actions performed
     "show_exact_confirm"   # flag for merge confirmation UI
 ]:
+    # Check if the key is missing from the session state
     if key not in st.session_state:
+        # If missing, initialize it with a default value (in this case, None)
         st.session_state[key] = None
+
+# You can optionally set more specific default values after the loop, if needed:
+# if st.session_state.step is None:
+#     st.session_state.step = 1
+# if st.session_state.audit_log is None:
+#     st.session_state.audit_log = []
+
+
+
+
+
+
+
 
 # Set initial step if not defined
 if st.session_state.step is None:
@@ -1245,6 +1264,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
 
 
 
