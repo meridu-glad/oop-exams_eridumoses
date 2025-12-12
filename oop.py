@@ -735,7 +735,7 @@ if st.session_state.step is None:
 
 # Sidebar
 
-ith st.sidebar:
+with st.sidebar:
     st.markdown("### 🔍 Audit Log")
     if st.session_state.audit_log:
         # Show the most recent 100 actions (top-first or reverse as you prefer)
@@ -1264,6 +1264,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
 
 
 
