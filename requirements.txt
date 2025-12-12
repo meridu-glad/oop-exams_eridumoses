@@ -3,6 +3,8 @@ pandas
 numpy 
 rapidfuzz
 openpyxl
+plotly
+
 
 
 
