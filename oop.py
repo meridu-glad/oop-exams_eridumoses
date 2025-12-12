@@ -477,6 +477,119 @@ with nav_right:
         st.session_state.step = min(6, st.session_state.step + 1)
         st.rerun()
 
-# Developer credit
-st.markdown('<div class="developer">(Developer: Tobias Abor)</div>', unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+
+# --- CSS: sticky footer ---
+st.markdown("""
+<style>
+/* Root variables to adjust colors for light/dark themes */
+:root {
+    --footer-bg: rgba(248, 250, 252, 0.92); /* light: slate-50 */
+    --footer-border: #e2e8f0;               /* slate-200 */
+    --footer-text: #334155;                 /* slate-700 */
+    --footer-link: #0ea5e9;                 /* sky-500 */
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --footer-bg: rgba(15, 23, 42, 0.85); /* dark: slate-900-ish */
+        --footer-border: #334155;            /* slate-700 */
+        --footer-text: #cbd5e1;              /* slate-300 */
+        --footer-link: #38bdf8;              /* sky-400 */
+    }
+}
+
+/* Sticky footer container */
+.footer-credit {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: 10px 16px;
+    background: var(--footer-bg);
+    color: var(--footer-text);
+    font-size: 0.95rem;
+    border-top: 1px solid var(--footer-border);
+
+    /* Subtle glass effect */
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+/* Inner content for better layout control */
+.footer-credit .content {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 1200px;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* Optional dot accent */
+.footer-credit .dot {
+    width: 8px;
+    height: 8px;
+    background: #22c55e; /* green-500 */
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* Emphasis for labels and name */
+.footer-credit .label { 
+    font-weight: 600; 
+}
+.footer-credit .name { 
+    font-weight: 600; 
+}
+
+/* Optional link styling */
+.footer-credit a {
+    color: var(--footer-link);
+    text-decoration: none;
+}
+.footer-credit a:hover {
+    text-decoration: underline;
+}
+
+/* Make sure Streamlit main content doesn't hide behind the footer */
+.main-spacer {
+    height: 56px; /* matches approx footer height */
+}
+
+/* Small screens: tighter spacing */
+@media (max-width: 480px) {
+    .footer-credit { font-size: 0.9rem; padding: 8px 12px; }
+    .main-spacer { height: 48px; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- Optional content / layout above ---
+st.title("My Streamlit App")
+st.write("Your app content goes here...")
+
+# --- spacer to prevent overlap with bottom content ---
+st.markdown('<div class="main-spacer"></div>', unsafe_allow_html=True)
+
+# --- Sticky footer HTML ---
+st.markdown(
+    '''
+    <div class="footer-credit">
+        <div class="content">
+            <span class="dot"></span>
+            <span class="label">Built by</span>
+            <span class="name">Moses Eridu</span>
+            <!-- Optional: add a link -->
+            <!-- <span>&middot;</span> https://example.comPortfolio</a> -->
+        </div>
+    </div>
+    ''',
+    unsafe_allow_html=True
+)
+
+
