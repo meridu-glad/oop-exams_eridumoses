@@ -4,10 +4,11 @@ import pandas as pd
 import numpy as np
 import io
 import time
-import re
-from collections import defaultdict
+# Removed rapidfuzz/fuzz/difflib imports as we focus on exact matching now
+from collections import defaultdict, Counter
 from datetime import datetime
-import plotly.express as px 
+import math
+import plotly.express as px # Added Plotly import
 
 # --- Helpers (pure Python & Streamlit session management) ---
 
@@ -15,20 +16,22 @@ def now_ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def log_action(msg):
+    """Logs actions to a persistent audit log in session state."""
     if st.session_state.get("audit_log") is None:
         st.session_state.audit_log = []
     st.session_state.audit_log.insert(0, f"{now_ts()} — {msg}")
 
-def df_to_bytes(df):
+def df_to_bytes(df, sheet_name="data"):
     """Converts a DataFrame to an in-memory Excel buffer for download."""
     try:
-        import openpyxl  # noqa: F401
+        import openpyxl  # noqa: F401 (ensure the library is available)
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="data")
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
         buf.seek(0)
         return buf.getvalue(), "excel"
     except ImportError:
+        # Fallback to CSV if openpyxl isn't installed
         return df.to_csv(index=False).encode("utf-8"), "csv"
 
 def basic_clean(df):
@@ -41,79 +44,51 @@ def basic_clean(df):
     return df
 
 def detect_exact_groups(df, key_cols):
-    """Detects groups of exact duplicates based on key columns."""
+    """Detects groups of exact duplicates based on key columns, returns indices of duplicates."""
     if not key_cols:
-        return []
-    grouped = df.groupby(key_cols, dropna=False).groups
-    groups = [list(indices) for indices in grouped.values() if len(indices) > 1]
-    return groups
-
-def soundex_code(s: str) -> str:
-    """Basic Soundex implementation: returns 4-character code."""
-    s = re.sub(r"[^A-Za-z]", "", str(s).upper())
-    if not s: return ""
-    first_letter = s
-    mappings = {c: "1" for c in "BFPV"}
-    mappings.update({c: "2" for c in "CGJKQSXZ"})
-    mappings.update({c: "3" for c in "DT"})
-    mappings.update({c: "4" for c in "L"})
-    mappings.update({c: "5" for c in "MN"})
-    mappings.update({c: "6" for c in "R"})
-
-    digits = []
-    prev = mappings.get(first_letter, "0")
-    for ch in s[1:]:
-        code = mappings.get(ch, "0")
-        if code != prev:
-            digits.append(code)
-        prev = code
-
-    cleaned = [d for d in digits if d != "0"]
-    code = first_letter + ("".join(cleaned) + "000")[:3]
-    return code
-
-
-def detect_phonetic_duplicates(df, name_col, district_col=None):
-    """
-    Groups potential duplicates using Soundex codes.
-    Returns a dictionary where keys are a composite key (e.g., soundex + district)
-    and values are lists of DataFrame indices.
-    """
-    if not name_col:
         return {}
-
-    df['soundex_temp'] = df[name_col].apply(soundex_code)
     
-    if district_col and district_col in df.columns:
-        df['group_key_temp'] = df['soundex_temp'] + "_" + df[district_col].astype(str).fillna("NA")
-    else:
-        df['group_key_temp'] = df['soundex_temp']
+    # Grouped is a dictionary where keys are the column values combo, and values are the indices
+    grouped = df.groupby(key_cols, dropna=False).groups
     
-    grouped_indices = defaultdict(list)
-    for idx, key in enumerate(df['group_key_temp']):
-        if key and key != "NA":
-            grouped_indices[key].append(idx)
-    
-    duplicate_groups = {k: v for k, v in grouped_indices.items() if len(v) > 1}
-    
-    df.drop(columns=['soundex_temp', 'group_key_temp'], inplace=True)
-
+    # Filter for groups that have more than one entry
+    duplicate_groups = {k: list(indices) for k, indices in grouped.items() if len(indices) > 1}
     return duplicate_groups
 
 
 # --- Streamlit App UI and Logic ---
 
 # Page configuration & styling (kept as provided by user)
-st.set_page_config(page_title="PLAYMATTERS DATABASE APP", layout="wide", initial_sidebar_state="auto")
-# NOTE: Removed CSS from snippet for brevity, assume it's still there in your file
+st.set_page_config(
+    page_title="PLAYMATTERS DATABASE APP",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
+
+# Inject custom CSS for styling (assuming this is copied from your original code)
+st.markdown("""
+<style>
+/* ... your CSS here ... */
+.title { text-align: center; font-size: 36px; font-weight: 800; margin-bottom: 6px; color: #1E3A8A; font-family: 'Segoe UI', Tahoma, sans-serif; }
+.subtitle { text-align: center; font-size: 16px; margin-top: 0px; color: #475569; font-family: 'Segoe UI', Tahoma, sans-serif; }
+.developer { position: fixed; right: 14px; bottom: 10px; font-style: italic; color: #1E3A8A; font-size: 14px; }
+.stButton>button, .stDownloadButton>button { background-color: #2563EB; color: white; font-weight: 700; border-radius: 8px; padding: 8px 16px; font-size: 14px; transition: background-color 0.3s ease; }
+.stButton>button:hover, .stDownloadButton>button:hover { background-color: #1E40AF; }
+.progress-label { font-weight: 700; color: #1E293B; }
+table.data { border-collapse: collapse; width: 100%; }
+table.data td, th { border: 1px solid #ddd; padding: 8px; }
+</style>
+""", unsafe_allow_html=True)
+
+# Render title and subtitle
 st.markdown('<div class="title">PLAYMATTERS DATABASE APP</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Deduplication, Cleaning, and Data Summarization</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Exact Deduplication, Cleaning, and Data Summarization for Attendance Records</div>', unsafe_allow_html=True)
 
 
 # Initialize session state variables
 if 'df_cleaned' not in st.session_state: st.session_state.df_cleaned = None
 if 'df_original' not in st.session_state: st.session_state.df_original = None
-if 'duplicate_groups' not in st.session_state: st.session_state.duplicate_groups = {}
+if 'exact_groups' not in st.session_state: st.session_state.exact_groups = {}
 if 'audit_log' not in st.session_state: st.session_state.audit_log = []
 
 
@@ -128,65 +103,64 @@ if uploaded_file is not None and st.session_state.df_original is None:
             df = pd.read_excel(uploaded_file, engine='openpyxl')
         
         st.session_state.df_original = df
-        st.session_state.df_cleaned = basic_clean(df.copy())
+        st.session_state.df_cleaned = basic_clean(df.copy()) # Auto-clean on upload
         log_action(f"File uploaded & auto-cleaned: {uploaded_file.name} ({len(df)} rows).")
-        st.rerun() 
+        st.rerun() # Rerun to show new sidebar options
 
     except Exception as e:
         st.error(f"Error reading file: {e}")
 
 # --- SIDEBAR: Cleaning Controls ---
 if st.session_state.df_cleaned is not None:
-    st.sidebar.header("2. Phonetic Deduplication")
+    st.sidebar.header("2. Exact Deduplication (Rule-Based)")
     
     current_df = st.session_state.df_cleaned
     cols = current_df.columns.tolist()
-    
-    name_col = st.sidebar.selectbox("Select 'Name' column for phonetic matching:", options=cols)
-    district_col = st.sidebar.selectbox("Select 'District' (optional blocker):", options=[None] + cols)
+    exact_cols_to_check = st.sidebar.multiselect(
+        "Select columns that *must* match exactly:", 
+        options=cols, 
+        default=[]
+    )
 
-    if st.sidebar.button("Detect Phonetic Duplicates"):
-        if name_col:
-            with st.spinner(f"Detecting phonetic matches using {name_col}..."):
-                st.session_state.duplicate_groups = detect_phonetic_duplicates(current_df, name_col, district_col)
-                count = sum(len(indices) - 1 for indices in st.session_state.duplicate_groups.values())
-                log_action(f"Found {count} potential phonetic duplicates across {len(st.session_state.duplicate_groups)} groups.")
-                st.sidebar.info(f"Found {count} potential phonetic duplicate rows.")
+    if st.sidebar.button("Detect EXACT Duplicates"):
+        if exact_cols_to_check:
+            with st.spinner("Detecting exact matches..."):
+                st.session_state.exact_groups = detect_exact_groups(current_df, exact_cols_to_check)
+                count = sum(len(indices) - 1 for indices in st.session_state.exact_groups.values())
+                log_action(f"Found {count} exact duplicates across {len(st.session_state.exact_groups)} groups.")
+                st.sidebar.info(f"Found {count} exact duplicate rows.")
         else:
-            st.sidebar.warning("Please select a name column.")
+            st.sidebar.warning("Please select columns for exact match detection.")
 
-    if st.session_state.duplicate_groups:
+    if st.session_state.exact_groups:
         st.sidebar.subheader("Manage Duplicates")
         
-        # Action 1: Download Duplicates (works correctly)
-        all_duplicate_indices = [idx for indices in st.session_state.duplicate_groups.values() for idx in indices]
+        # Action 1: Download Duplicates for Manual Review
+        all_duplicate_indices = [idx for indices in st.session_state.exact_groups.values() for idx in indices]
         duplicates_df = st.session_state.df_cleaned.loc[all_duplicate_indices].sort_index()
         
-        dl_bytes, dl_type = df_to_bytes(duplicates_df)
+        dl_bytes, dl_type = df_to_bytes(duplicates_df, sheet_name="Duplicates")
         st.sidebar.download_button(
-            label=f"Download {len(duplicates_df)} Duplicates for Review",
+            label=f"Download {len(duplicates_df)} Duplicates",
             data=dl_bytes,
             file_name=f"duplicates_for_review_{now_ts().replace(' ', '_')}.{'xlsx' if dl_type == 'excel' else 'csv'}",
             mime=f"application/{'vnd.openxmlformats-officedocument.spreadsheetml.sheet' if dl_type == 'excel' else 'csv'}"
         )
         
         # Action 2: Delete Duplicates (keeping only one record per group)
-        if st.sidebar.button("Delete ALL Duplicates (Keep 1st Instance Only)", help="This action removes all but the first record in each identified group."):
+        if st.sidebar.button("Delete ALL Duplicates (Keep 1st Instance Only)"):
             
-            # --- FIX APPLIED HERE ---
-            # We want only the FIRST index of each duplicate group
-            indices_to_keep_list = [indices[0] for indices in st.session_state.duplicate_groups.values()]
+            # --- Corrected Logic for Indexing (Fixes the TypeError) ---
+            # Extract only the first index of each group to keep
+            indices_to_keep_list = [indices[0] for indices in st.session_state.exact_groups.values()]
             
-            # Ensure unique indices just in case, using set temporarily then converting back to list
-            indices_to_keep_final = sorted(list(set(indices_to_keep_list)))
-
             # Filter the main dataframe using a list indexer
-            st.session_state.df_cleaned = st.session_state.df_cleaned.loc[indices_to_keep_final].copy()
-            st.session_state.df_cleaned = st.session_state.df_cleaned.reset_index(drop=True) # Reset index after dropping
+            st.session_state.df_cleaned = st.session_state.df_cleaned.loc[indices_to_keep_list].copy()
+            st.session_state.df_cleaned = st.session_state.df_cleaned.reset_index(drop=True)
             
             log_action(f"Deleted duplicates. New row count: {len(st.session_state.df_cleaned)}")
             st.sidebar.success(f"Duplicates removed. Total rows remaining: {len(st.session_state.df_cleaned)}")
-            st.session_state.duplicate_groups = {} # Clear the duplicate list after action
+            st.session_state.exact_groups = {} # Clear the duplicate list after action
             st.rerun()
 
 
@@ -199,6 +173,8 @@ else:
     
     df_display = st.session_state.df_cleaned
     
+    # --- Data Summarization & Visuals ---
+    # We check if Sex and District columns are present for the visuals requested by the user
     if all(col in df_display.columns for col in ['Sex', 'District']):
         st.subheader("Data Summarization & Visuals")
         
@@ -220,13 +196,20 @@ else:
     else:
         st.warning("Cannot generate data summaries. Please ensure your data has 'Sex' and 'District' columns (case sensitive) after basic cleaning.")
 
+    # --- Main Dataframe Display and Download Option ---
     st.subheader("Current Cleaned Dataset")
     st.dataframe(df_display, use_container_width=True)
     st.markdown(f"**Total Rows in current view:** {len(df_display)}")
-
-    with st.expander("View Audit Log"):
-        st.code("\n".join(st.session_state.audit_log))
+    
+    # Final option for downloading clean data
+    clean_bytes, clean_type = df_to_bytes(df_display, sheet_name="CleanedData")
+    st.download_button(
+        label=f"Download Final Cleaned Data as {'Excel' if clean_type == 'excel' else 'CSV'}",
+        data=clean_bytes,
+        file_name=f"final_cleaned_data_{now_ts().replace(' ', '_').replace(':', '-')}.{'xlsx' if clean_type == 'excel' else 'csv'}",
+        mime=f"application/{'vnd.openxmlformats-officedocument.spreadsheetml.sheet' if clean_type == 'excel' else 'csv'}"
+    )
 
 
 # Sticky footer for developer credit
-st.markdown('<div class="developer">Developed by PM Team</div>', unsafe_allow_html=True)
+st.markdown('<div class="developer">Built by Eridu Moses</div>', unsafe_allow_html=True)
