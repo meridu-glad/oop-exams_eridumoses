@@ -810,8 +810,7 @@ if st.session_state.step == 1:
             st.error(f"Failed to load file: {e}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-Next Clean & summary 
-
+Clean & summary 
 
 if st.session_state.step == 2:
     st.markdown("<div class='section'>", unsafe_allow_html=True)
@@ -1264,6 +1263,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
 
 
 
