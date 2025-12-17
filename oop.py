@@ -92,10 +92,6 @@ if 'df_cleaned' not in st.session_state: st.session_state.df_cleaned = None
 if 'df_original' not in st.session_state: st.session_state.df_original = None
 if 'exact_groups' not in st.session_state: st.session_state.exact_groups = {}
 if 'audit_log' not in st.session_state: st.session_state.audit_log = []
-# New state trackers for UI flow control
-if 'data_is_cleaned' not in st.session_state: st.session_state.data_is_cleaned = False
-if 'data_is_processed' not in st.session_state: st.session_state.data_is_processed = False
-
 
 # --- SIDEBAR: Upload and Processing Controls ---
 with st.sidebar:
@@ -110,46 +106,93 @@ with st.sidebar:
                 df = pd.read_excel(uploaded_file, engine='openpyxl')
             
             st.session_state.df_original = df
-            st.session_state.df_cleaned = df.copy() # Load raw data into cleaned slot initially
-            st.session_state.data_is_cleaned = False
-            st.session_state.data_is_processed = False
+            st.session_state.df_cleaned = df.copy() 
             log_action(f"File uploaded: {uploaded_file.name} ({len(df)} rows).")
             st.rerun() 
         except Exception as e:
             st.error(f"Error reading file: {e}")
     
     if st.session_state.df_original is not None:
-        st.header("2. Pre-Processing Actions")
+        st.header("2. Data Preparation")
         
-        # Action Button: Clean Dataset
-        if st.button("Clean Data (Title Case, Strip Whitespace)"):
+        st.subheader("A. Missing Data Check & Handling")
+        # Display missing data report first
+        missing_data = st.session_state.df_cleaned.isnull().sum()
+        missing_data = missing_data[missing_data > 0]
+        if not missing_data.empty:
+            st.warning("Missing values detected in current data:")
+            st.dataframe(missing_data.rename("Count"))
+            
+            # Then provide options to handle it
+            missing_option = st.selectbox("Choose how to handle NaNs:", ["Do nothing", "Drop rows with ANY missing data", "Fill NaNs with custom value"])
+            
+            fill_value = None
+            if missing_option == "Fill NaNs with custom value":
+                fill_value = st.text_input("Value to fill NaNs with:", value="Missing")
+            
+            if st.button("Apply Missing Data Action"):
+                if missing_option == "Drop rows with ANY missing data":
+                    st.session_state.df_cleaned = st.session_state.df_cleaned.dropna().reset_index(drop=True)
+                    log_action("Dropped rows with missing data.")
+                    st.success(f"Dropped rows. New count: {len(st.session_state.df_cleaned)}")
+                elif missing_option == "Fill NaNs with custom value" and fill_value is not None:
+                    st.session_state.df_cleaned = st.session_state.df_cleaned.fillna(fill_value)
+                    log_action(f"Filled NaNs with '{fill_value}'.")
+                    st.success(f"Filled missing data.")
+                st.rerun()
+        else:
+            st.success("No missing data detected in current view.")
+        
+        st.subheader("B. Clean & Format Data")
+        if st.button("Apply Basic Cleaning (Title Case, Strip)"):
             st.session_state.df_cleaned = basic_clean(st.session_state.df_cleaned)
-            st.session_state.data_is_cleaned = True
             log_action("Data cleaning applied.")
             st.success("Data cleaning complete.")
             st.rerun()
-            
-        # Action Button: Deal with Missing Data
-        st.subheader("Handle Missing Data")
-        missing_option = st.selectbox("Choose how to handle NaNs:", ["Do nothing", "Drop rows with ANY missing data", "Fill NaNs with custom value"])
-        
-        if missing_option == "Fill NaNs with custom value":
-            fill_value = st.text_input("Value to fill NaNs with:", value="Missing")
-        
-        if st.button("Apply Missing Data Action"):
-            if missing_option == "Drop rows with ANY missing data":
-                st.session_state.df_cleaned = st.session_state.df_cleaned.dropna().reset_index(drop=True)
-                log_action("Dropped rows with missing data.")
-                st.success(f"Dropped rows. New count: {len(st.session_state.df_cleaned)}")
-            elif missing_option == "Fill NaNs with custom value" and fill_value:
-                st.session_state.df_cleaned = st.session_state.df_cleaned.fillna(fill_value)
-                log_action(f"Filled NaNs with '{fill_value}'.")
-                st.success(f"Filled missing data.")
-            st.rerun()
-            
+
+        # --- Deduplication Controls (Now correctly nested and active) ---
         st.header("3. Deduplication Controls")
-        # Rest of deduplication controls (Exact/Fuzzy) remain here... 
-        # (omitted for brevity in this response, assumed functional from previous code)
+        current_df = st.session_state.df_cleaned
+        cols = current_df.columns.tolist()
+        
+        # Exact Match Section
+        st.subheader("Exact Match (Rule-Based)")
+        exact_cols_to_check = st.multiselect(
+            "Select columns that *must* match exactly:", 
+            options=cols, 
+            default=[]
+        )
+
+        if st.button("Detect EXACT Duplicates"):
+            if exact_cols_to_check:
+                with st.spinner("Detecting exact matches..."):
+                    st.session_state.exact_groups = detect_exact_groups(current_df, exact_cols_to_check)
+                    count = sum(len(indices) - 1 for indices in st.session_state.exact_groups.values())
+                    log_action(f"Found {count} exact duplicates.")
+                    st.info(f"Found {count} exact duplicate rows.")
+            else:
+                st.warning("Please select columns.")
+
+        if st.session_state.exact_groups:
+            if st.button("Delete ALL EXACT Duplicates (Keep 1st Instance)"):
+                indices_to_keep_mask = ~current_df.index.isin([idx for indices in st.session_state.exact_groups.values() for idx in indices[1:]])
+                st.session_state.df_cleaned = current_df[indices_to_keep_mask].reset_index(drop=True)
+                log_action(f"Deleted exact duplicates. New row count: {len(st.session_state.df_cleaned)}")
+                st.success(f"Duplicates removed. Total rows remaining: {len(st.session_state.df_cleaned)}")
+                st.session_state.exact_groups = {} 
+                st.rerun() 
+
+        # Fuzzy Match Section (Optional)
+        st.subheader("Optional Fuzzy Match")
+        fuzzy_col_to_check = st.selectbox("Select a single column for fuzzy deduplication:", options=['None'] + cols)
+        fuzzy_threshold = st.slider("Fuzzy match threshold (%)", min_value=70, max_value=100, value=85, step=1)
+
+        if st.button("Perform Fuzzy Deduplication"):
+            if fuzzy_col_to_check != 'None':
+                st.session_state.df_cleaned = perform_fuzzy_dedupe(st.session_state.df_cleaned, fuzzy_col_to_check, fuzzy_threshold)
+                st.rerun()
+            else:
+                st.warning("Please select a column for fuzzy matching.")
 
 
 # --- MAIN CONTENT AREA ---
@@ -183,11 +226,15 @@ else:
             elif viz_type == "Bar Chart (X/Y Variables)":
                 col_x, col_y = st.columns(2)
                 with col_x:
-                    selected_col_x = st.selectbox("Select X-axis column:", cols_for_viz, key='viz_bar_x')
+                    selected_col_x = st.selectbox("Select X-axis column (Categorical):", cols_for_viz, key='viz_bar_x')
                 with col_y:
                     # Allow numerical columns for Y-axis too
                     numeric_cols = [c for c in st.session_state.df_cleaned.columns if pd.api.types.is_numeric_dtype(st.session_state.df_cleaned[c])]
-                    selected_col_y = st.selectbox("Select Y-axis column:", numeric_cols, key='viz_bar_y')
+                    # Only show the Y selection if an X column is picked, to prevent confusion
+                    if selected_col_x:
+                        selected_col_y = st.selectbox("Select Y-axis column (Numeric):", numeric_cols, key='viz_bar_y')
+                    else:
+                        selected_col_y = None
                 
                 if selected_col_x and selected_col_y:
                     fig_bar = px.bar(st.session_state.df_cleaned, x=selected_col_x, y=selected_col_y, title=f"{selected_col_y} by {selected_col_x}")
@@ -202,7 +249,6 @@ else:
         
         st.subheader("Download Final Cleaned Data")
         
-        # The download button is now always active if data exists in df_cleaned state
         clean_bytes, clean_type = df_to_bytes(st.session_state.df_cleaned, sheet_name="CleanedData")
         st.download_button(
             label=f"Download Final Cleaned Data as {'Excel' if clean_type == 'excel' else 'CSV'}",
