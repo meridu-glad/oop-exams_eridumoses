@@ -1,10 +1,11 @@
-streamlit 
-pandas 
-numpy 
 rapidfuzz
-openpyxl
+streamlit
+pandas
+numpy
 plotly
-
+openpyxl
+thefuzz
+python-Levenshtein
 
 
 
